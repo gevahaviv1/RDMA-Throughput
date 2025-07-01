@@ -806,6 +806,48 @@ int main(int argc, char *argv[])
         if (pp_connect_ctx(ctx, ib_port, my_dest.psn, mtu, sl, rem_dest, gidx))
             return 1;
 
+    /*
+     * WARMUP:
+     * Client sends 'iters' messages and waits for one response from server.
+     * Server waits for 'iters' messages then responds once.
+     * No timing is performed during this stage.
+     */
+    if (servername) {
+        int i;
+        for (i = 0; i < iters; i++) {
+            if (i && (i % tx_depth == 0))
+                pp_wait_completions(ctx, tx_depth);
+
+            if (pp_post_send(ctx)) {
+                fprintf(stderr, "Client couldn't post send in warmup\n");
+                return 1;
+            }
+        }
+
+        if (iters % tx_depth)
+            pp_wait_completions(ctx, iters % tx_depth);
+
+        if (pp_wait_completions(ctx, 1)) {
+            fprintf(stderr, "Client failed waiting for warmup reply\n");
+            return 1;
+        }
+    } else {
+        if (pp_wait_completions(ctx, iters)) {
+            fprintf(stderr, "Server failed waiting for warmup messages\n");
+            return 1;
+        }
+
+        if (pp_post_send(ctx)) {
+            fprintf(stderr, "Server couldn't post warmup response\n");
+            return 1;
+        }
+
+        if (pp_wait_completions(ctx, 1)) {
+            fprintf(stderr, "Server warmup send completion failed\n");
+            return 1;
+        }
+    }
+
     if (servername) {
         int i;
         for (i = 0; i < iters; i++) {

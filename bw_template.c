@@ -521,11 +521,11 @@ static int pp_post_recv(struct pingpong_context *ctx, int n)
     return i;
 }
 
-static int pp_post_send(struct pingpong_context *ctx)
+static int pp_post_send(struct pingpong_context *ctx, int send_size)
 {
     struct ibv_sge list = {
             .addr	= (uint64_t)ctx->buf,
-            .length = ctx->size,
+            .length     = send_size,
             .lkey	= ctx->mr->lkey
     };
 
@@ -880,7 +880,7 @@ int main(int argc, char *argv[])
             if (i && (i % tx_depth == 0))
                 pp_wait_completions(ctx, tx_depth);
 
-            if (pp_post_send(ctx)) {
+            if (pp_post_send(ctx, ctx->size)) {
                 fprintf(stderr, "Client couldn't post send in warmup\n");
                 return 1;
             }
@@ -899,7 +899,7 @@ int main(int argc, char *argv[])
             return 1;
         }
 
-        if (pp_post_send(ctx)) {
+        if (pp_post_send(ctx, ctx->size)) {
             fprintf(stderr, "Server couldn't post warmup response\n");
             return 1;
         }
@@ -911,8 +911,8 @@ int main(int argc, char *argv[])
     }
   
     for (size = 1; size <= max_size; size <<= 1) {
-        ctx->size = size;
         printf("Testing message size %d bytes\n", size);
+        int send_size = size;
 
         if (servername) {
             struct timespec start, end;
@@ -925,7 +925,7 @@ int main(int argc, char *argv[])
                 if (i && (i % tx_depth == 0))
                     pp_wait_completions(ctx, tx_depth);
 
-                if (pp_post_send(ctx)) {
+                if (pp_post_send(ctx, send_size)) {
                     fprintf(stderr, "Client couldn't post send\n");
                     return 1;
                 }
@@ -952,7 +952,7 @@ int main(int argc, char *argv[])
                 return 1;
             }
 
-            if (pp_post_send(ctx)) {
+            if (pp_post_send(ctx, send_size)) {
                 fprintf(stderr, "Server couldn't post send\n");
                 return 1;
             }

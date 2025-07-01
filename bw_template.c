@@ -856,24 +856,52 @@ int main(int argc, char *argv[])
         printf("Testing message size %d bytes\n", size);
 
         if (servername) {
+            struct timespec start, end;
+            double elapsed, throughput;
             int i;
+
+            clock_gettime(CLOCK_MONOTONIC, &start);
+
             for (i = 0; i < iters; i++) {
-                if ((i != 0) && (i % tx_depth == 0)) {
+                if (i && (i % tx_depth == 0))
                     pp_wait_completions(ctx, tx_depth);
-                }
+
                 if (pp_post_send(ctx)) {
-                    fprintf(stderr, "Client ouldn't post send\n");
+                    fprintf(stderr, "Client couldn't post send\n");
                     return 1;
                 }
             }
-            printf("Client Done.\n");
+
+            if (iters % tx_depth)
+                pp_wait_completions(ctx, iters % tx_depth);
+
+            if (pp_wait_completions(ctx, 1)) {
+                fprintf(stderr, "Client failed waiting for reply\n");
+                return 1;
+            }
+
+            clock_gettime(CLOCK_MONOTONIC, &end);
+            elapsed = (end.tv_sec - start.tv_sec) +
+                      (end.tv_nsec - start.tv_nsec) / 1e9;
+            throughput = (double)size * iters * 8 / elapsed / 1e6;
+            printf("size %d bytes: %.3f sec, %.2f Mbit/s\n",
+                   size, elapsed, throughput);
+
         } else {
+            if (pp_wait_completions(ctx, iters)) {
+                fprintf(stderr, "Server failed waiting for messages\n");
+                return 1;
+            }
+
             if (pp_post_send(ctx)) {
                 fprintf(stderr, "Server couldn't post send\n");
                 return 1;
             }
-            pp_wait_completions(ctx, iters);
-            printf("Server Done.\n");
+
+            if (pp_wait_completions(ctx, 1)) {
+                fprintf(stderr, "Server send completion failed\n");
+                return 1;
+            }
         }
     }
 

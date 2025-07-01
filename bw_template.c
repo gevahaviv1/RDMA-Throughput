@@ -628,6 +628,7 @@ int main(int argc, char *argv[])
     int                      iters = 1000;
     int                      use_event = 0;
     int                      size = 1;
+    int                      max_size = 1 << 20; /* 1MB */
     int                      sl = 0;
     int                      gidx = -1;
     char                     gid[33];
@@ -677,7 +678,7 @@ int main(int argc, char *argv[])
             break;
 
         case 's':
-            size = strtol(optarg, NULL, 0);
+            max_size = strtol(optarg, NULL, 0);
             break;
 
         case 'm':
@@ -747,7 +748,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    ctx = pp_init_ctx(ib_dev, size, rx_depth, tx_depth, ib_port, use_event, !servername);
+    ctx = pp_init_ctx(ib_dev, max_size, rx_depth, tx_depth, ib_port, use_event, !servername);
     if (!ctx)
         return 1;
 
@@ -806,25 +807,30 @@ int main(int argc, char *argv[])
         if (pp_connect_ctx(ctx, ib_port, my_dest.psn, mtu, sl, rem_dest, gidx))
             return 1;
 
-    if (servername) {
-        int i;
-        for (i = 0; i < iters; i++) {
-            if ((i != 0) && (i % tx_depth == 0)) {
-                pp_wait_completions(ctx, tx_depth);
+    for (size = 1; size <= max_size; size <<= 1) {
+        ctx->size = size;
+        printf("Testing message size %d bytes\n", size);
+
+        if (servername) {
+            int i;
+            for (i = 0; i < iters; i++) {
+                if ((i != 0) && (i % tx_depth == 0)) {
+                    pp_wait_completions(ctx, tx_depth);
+                }
+                if (pp_post_send(ctx)) {
+                    fprintf(stderr, "Client ouldn't post send\n");
+                    return 1;
+                }
             }
+            printf("Client Done.\n");
+        } else {
             if (pp_post_send(ctx)) {
-                fprintf(stderr, "Client ouldn't post send\n");
+                fprintf(stderr, "Server couldn't post send\n");
                 return 1;
             }
+            pp_wait_completions(ctx, iters);
+            printf("Server Done.\n");
         }
-        printf("Client Done.\n");
-    } else {
-        if (pp_post_send(ctx)) {
-            fprintf(stderr, "Server couldn't post send\n");
-            return 1;
-        }
-        pp_wait_completions(ctx, iters);
-        printf("Server Done.\n");
     }
 
     ibv_free_device_list(dev_list);

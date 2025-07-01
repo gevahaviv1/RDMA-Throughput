@@ -943,7 +943,7 @@ int main(int argc, char *argv[])
             elapsed = (end.tv_sec - start.tv_sec) +
                       (end.tv_nsec - start.tv_nsec) / 1e9;
             throughput = (double)size * iters * 8 / elapsed / 1e6;
-            printf("size %d bytes: %.3f sec, %.2f Mbit/s\n",
+            printf("%d bytes in %.3f seconds = %.2f Mbit/sec\n",
                    size, elapsed, throughput);
 
         } else {

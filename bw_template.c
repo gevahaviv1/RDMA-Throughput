@@ -49,6 +49,8 @@
 #include <infiniband/verbs.h>
 
 #define WC_BATCH (10)
+/* Number of iterations used for warmup before measurements */
+#define WARMUP_ITERS 100
 
 enum {
     PINGPONG_RECV_WRID = 1,
@@ -808,13 +810,13 @@ int main(int argc, char *argv[])
 
     /*
      * WARMUP:
-     * Client sends 'iters' messages and waits for one response from server.
-     * Server waits for 'iters' messages then responds once.
+     * Client sends WARMUP_ITERS messages and waits for one response from server.
+     * Server waits for WARMUP_ITERS messages then responds once.
      * No timing is performed during this stage.
      */
     if (servername) {
         int i;
-        for (i = 0; i < iters; i++) {
+        for (i = 0; i < WARMUP_ITERS; i++) {
             if (i && (i % tx_depth == 0))
                 pp_wait_completions(ctx, tx_depth);
 
@@ -824,15 +826,15 @@ int main(int argc, char *argv[])
             }
         }
 
-        if (iters % tx_depth)
-            pp_wait_completions(ctx, iters % tx_depth);
+        if (WARMUP_ITERS % tx_depth)
+            pp_wait_completions(ctx, WARMUP_ITERS % tx_depth);
 
         if (pp_wait_completions(ctx, 1)) {
             fprintf(stderr, "Client failed waiting for warmup reply\n");
             return 1;
         }
     } else {
-        if (pp_wait_completions(ctx, iters)) {
+        if (pp_wait_completions(ctx, WARMUP_ITERS)) {
             fprintf(stderr, "Server failed waiting for warmup messages\n");
             return 1;
         }

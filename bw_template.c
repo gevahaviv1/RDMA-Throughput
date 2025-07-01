@@ -594,6 +594,65 @@ int pp_wait_completions(struct pingpong_context *ctx, int iters)
     return 0;
 }
 
+/* Wait for @iters receive completions only */
+static int pp_wait_completion(struct pingpong_context *ctx, int iters)
+{
+    int rcnt = 0;
+    while (rcnt < iters) {
+        struct ibv_wc wc[WC_BATCH];
+        int ne, i;
+
+        do {
+            ne = ibv_poll_cq(ctx->cq, WC_BATCH, wc);
+            if (ne < 0) {
+                fprintf(stderr, "poll CQ failed %d\n", ne);
+                return 1;
+            }
+        } while (ne < 1);
+
+        for (i = 0; i < ne; ++i) {
+            if (wc[i].status != IBV_WC_SUCCESS) {
+                fprintf(stderr, "Failed status %s (%d) for wr_id %d\n",
+                        ibv_wc_status_str(wc[i].status),
+                        wc[i].status, (int)wc[i].wr_id);
+                return 1;
+            }
+
+            switch ((int)wc[i].wr_id) {
+            case PINGPONG_RECV_WRID:
+                if (--ctx->routs <= 10) {
+                    ctx->routs += pp_post_recv(ctx, ctx->rx_depth - ctx->routs);
+                    if (ctx->routs < ctx->rx_depth) {
+                        fprintf(stderr,
+                                "Couldn't post receive (%d)\n",
+                                ctx->routs);
+                        return 1;
+                    }
+                }
+                ++rcnt;
+                break;
+
+            case PINGPONG_SEND_WRID:
+                /* Ignore send completions here */
+                break;
+
+            default:
+                fprintf(stderr, "Completion for unknown wr_id %d\n",
+                        (int)wc[i].wr_id);
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+/* Wait for a single send completion */
+static int pp_wait_send_completion(struct pingpong_context *ctx)
+{
+    return pp_wait_completions(ctx, 1);
+}
+
 static void usage(const char *argv0)
 {
     printf("Usage:\n");
@@ -835,7 +894,7 @@ int main(int argc, char *argv[])
             return 1;
         }
     } else {
-        if (pp_wait_completions(ctx, WARMUP_ITERS)) {
+        if (pp_wait_completion(ctx, WARMUP_ITERS)) {
             fprintf(stderr, "Server failed waiting for warmup messages\n");
             return 1;
         }
@@ -845,7 +904,7 @@ int main(int argc, char *argv[])
             return 1;
         }
 
-        if (pp_wait_completions(ctx, 1)) {
+        if (pp_wait_send_completion(ctx)) {
             fprintf(stderr, "Server warmup send completion failed\n");
             return 1;
         }
@@ -888,8 +947,8 @@ int main(int argc, char *argv[])
                    size, elapsed, throughput);
 
         } else {
-            if (pp_wait_completions(ctx, iters)) {
-                fprintf(stderr, "Server failed waiting for messages\n");
+            if (pp_wait_completion(ctx, iters)) {
+                fprintf(stderr, "Server failed waiting for client messages\n");
                 return 1;
             }
 
@@ -898,10 +957,12 @@ int main(int argc, char *argv[])
                 return 1;
             }
 
-            if (pp_wait_completions(ctx, 1)) {
+            if (pp_wait_send_completion(ctx)) {
                 fprintf(stderr, "Server send completion failed\n");
                 return 1;
             }
+            printf("Server Done.\n");
+
         }
     }
 
